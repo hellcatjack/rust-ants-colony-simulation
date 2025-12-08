@@ -3,6 +3,7 @@ use ants::{
     gui::{GuiPlugin, SimSettings},
     pathviz::PathVizPlugin,
     pheromone::PheromonePlugin,
+    map::MapPlugin,
     *,
 };
 use bevy::{
@@ -67,6 +68,7 @@ fn main() {
         .add_plugins(AntPlugin)
         .add_plugins(PheromonePlugin)
         .add_plugins(PathVizPlugin)
+        .add_plugins(MapPlugin)
         .add_plugins(GuiPlugin)
         .run();
 }
@@ -112,7 +114,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ..Default::default()
     });
 
-    // Food sprite
+    // Food sprite - Removed default spawning
+    /*
     commands.spawn(SpriteBundle {
         texture: asset_server.load(SPRITE_FOOD),
         sprite: Sprite {
@@ -123,6 +126,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             .with_scale(Vec3::splat(FOOD_SPRITE_SCALE)),
         ..Default::default()
     });
+    */
 }
 
 fn limit_fps(mut limiter: ResMut<FrameLimiter>, keys: Res<Input<KeyCode>>) {

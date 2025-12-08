@@ -86,28 +86,38 @@ fn pheromone_image_update(
     sim_settings: Res<SimSettings>,
     pheromone: Res<Pheromones>,
     mut image_handle_query: Query<&mut Handle<Image>, With<PheromoneImageRender>>,
+    map_size: Res<crate::map::MapSize>,
+    config: Res<SimConfig>,
 ) {
     let mut img_handle = image_handle_query.single_mut();
     let (w, h) = (
-        W as usize / PH_UNIT_GRID_SIZE,
-        H as usize / PH_UNIT_GRID_SIZE,
+        map_size.width as usize / PH_UNIT_GRID_SIZE,
+        map_size.height as usize / PH_UNIT_GRID_SIZE,
     );
     let mut bytes = vec![0; w * h * 4];
 
     if sim_settings.is_show_home_ph {
         add_map_to_grid_img(
             pheromone.to_home.get_signals(),
-            &pheromone.to_home.color,
             &mut bytes,
             true,
+            map_size.width,
+            map_size.height,
+            config.max_pheromone_strength,
+            pheromone.to_home.color,
+            (255, 0, 0), // Deep Red for Home Pheromone Max
         );
     }
     if sim_settings.is_show_food_ph {
         add_map_to_grid_img(
             pheromone.to_food.get_signals(),
-            &pheromone.to_food.color,
             &mut bytes,
             true,
+            map_size.width,
+            map_size.height,
+            config.max_pheromone_strength,
+            pheromone.to_food.color,
+            (0, 0, 255), // Deep Blue for Food Pheromone Max
         );
     }
 
@@ -141,7 +151,7 @@ impl Pheromones {
         let mut to_home_map = HashMap::new();
 
         // Food and Home have high pheromone strength
-        to_food_map.insert((FOOD_LOCATION.0 as i32, FOOD_LOCATION.1 as i32), 100000.0);
+        // to_food_map.insert((FOOD_LOCATION.0 as i32, FOOD_LOCATION.1 as i32), 100000.0);
         to_home_map.insert((HOME_LOCATION.0 as i32, HOME_LOCATION.1 as i32), 100000.0);
 
         Self {

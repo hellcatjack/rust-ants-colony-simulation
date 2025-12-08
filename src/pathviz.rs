@@ -2,7 +2,6 @@ use crate::{
     ant::{Ant, AntTask, CurrentTask},
     grid::{add_map_to_grid_img, DecayGrid},
     gui::SimSettings,
-    utils::window_to_grid,
     *,
 };
 use bevy::{
@@ -65,18 +64,26 @@ fn update_viz_grid_visibility(
 fn update_grid_values(
     ant_query: Query<(&Transform, &CurrentTask), With<Ant>>,
     mut viz_grid: ResMut<PathVizGrid>,
+    map_size: Res<crate::map::MapSize>,
 ) {
+    let w_map = map_size.width;
+    let h_map = map_size.height;
+    
     for (transform, current_task) in ant_query.iter() {
         let x = transform.translation.x as i32;
         let y = transform.translation.y as i32;
-        let key = window_to_grid(x, y);
+        
+        // Inline window_to_grid logic with dynamic size
+        let k_x = (x + (w_map as i32 / 2)) / PH_UNIT_GRID_SIZE as i32;
+        let k_y = ((h_map as i32 / 2) - y) / PH_UNIT_GRID_SIZE as i32;
+        let key = (k_x, k_y);
 
         match current_task.0 {
             AntTask::FindFood => {
-                viz_grid.dg_food.add_value(&key, VIZ_COLOR_STRENGTH, 5.0);
+                viz_grid.dg_food.add_value(&key, VIZ_COLOR_STRENGTH, 5.0, 1000.0);
             }
             AntTask::FindHome => {
-                viz_grid.dg_home.add_value(&key, VIZ_COLOR_STRENGTH, 5.0);
+                viz_grid.dg_home.add_value(&key, VIZ_COLOR_STRENGTH, 5.0, 1000.0);
             }
         }
     }
@@ -91,25 +98,34 @@ fn update_path_viz_image(
     mut textures: ResMut<Assets<Image>>,
     viz_grid: Res<PathVizGrid>,
     mut query: Query<&mut Handle<Image>, With<PathVizImageRender>>,
+    map_size: Res<crate::map::MapSize>,
 ) {
     let mut img_handle = query.single_mut();
     let (w, h) = (
-        W as usize / PH_UNIT_GRID_SIZE,
-        H as usize / PH_UNIT_GRID_SIZE,
+        map_size.width as usize / PH_UNIT_GRID_SIZE,
+        map_size.height as usize / PH_UNIT_GRID_SIZE,
     );
 
     let mut bytes = vec![0; w * h * 4];
     add_map_to_grid_img(
         viz_grid.dg_food.get_values(),
-        &VIZ_COLOR_TO_FOOD,
         &mut bytes,
         false,
+        map_size.width,
+        map_size.height,
+        VIZ_MAX_COLOR_STRENGTH, 
+        VIZ_COLOR_TO_FOOD,
+        VIZ_COLOR_TO_FOOD,
     );
     add_map_to_grid_img(
         viz_grid.dg_home.get_values(),
-        &VIZ_COLOR_TO_HOME,
         &mut bytes,
         false,
+        map_size.width,
+        map_size.height,
+        VIZ_MAX_COLOR_STRENGTH,
+        VIZ_COLOR_TO_HOME,
+        VIZ_COLOR_TO_HOME,
     );
 
     let path_img = Image::new(
@@ -124,6 +140,7 @@ fn update_path_viz_image(
     );
     *img_handle = textures.add(path_img);
 }
+
 
 impl PathVizGrid {
     fn new() -> Self {

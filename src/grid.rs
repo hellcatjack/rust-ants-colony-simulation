@@ -1,5 +1,5 @@
 use crate::{
-    utils::{calc_weighted_midpoint, window_to_grid},
+    utils::calc_weighted_midpoint,
     *,
 };
 use bevy::prelude::*;
@@ -29,14 +29,14 @@ impl WorldGrid {
         }
     }
 
-    pub fn emit_signal(&mut self, key: &(i32, i32), value: f32) {
+    pub fn emit_signal(&mut self, key: &(i32, i32), value: f32, max_val: f32) {
         let key = self.get_ph_key(key.0, key.1);
         // TODO: this 0 check prevents from having a large pheromone to be formed at the center
         // Still to debug why this happens
         if key.0 == 0 && key.1 == 0 {
             return;
         }
-        self.signals.add_value(&key, value, value * 0.25);
+        self.signals.add_value(&key, value, value * 0.25, max_val);
     }
 
     pub fn update_tree(&mut self) {
@@ -156,17 +156,17 @@ impl DecayGrid {
         }
     }
 
-    pub fn add_value(&mut self, key: &(i32, i32), value: f32, increment_value: f32) {
+    pub fn add_value(&mut self, key: &(i32, i32), value: f32, increment_value: f32, max_val: f32) {
         if value <= 0.0 {
             return;
         }
 
         match self.values.get_mut(key) {
             Some(old_value) => {
-                *old_value = (increment_value + *old_value).min(self.max_allowed_value);
+                *old_value = (increment_value + *old_value).min(max_val);
             }
             None => {
-                self.values.insert(*key, value);
+                self.values.insert(*key, value.min(max_val));
             }
         }
     }
@@ -188,30 +188,52 @@ impl DecayGrid {
 
 pub fn add_map_to_grid_img(
     map: &HashMap<(i32, i32), f32>,
-    color: &(u8, u8, u8),
     img_bytes: &mut Vec<u8>,
     use_grid_pos: bool,
+    map_w_pixels: f32,
+    map_h_pixels: f32,
+    max_val: f32, // From config
+    base_color: (u8, u8, u8),
+    high_color: (u8, u8, u8),
 ) {
-    let w = W as usize / PH_UNIT_GRID_SIZE;
+    let w = map_w_pixels as usize / PH_UNIT_GRID_SIZE;
     for (k, v) in map.iter() {
         let (mut x, mut y) = (k.0, k.1);
 
         if use_grid_pos {
             (x, y) = (x * PH_UNIT_GRID_SIZE as i32, y * PH_UNIT_GRID_SIZE as i32);
-            (x, y) = window_to_grid(x, y);
+            let (tx, ty) = (x + (map_w_pixels as i32 / 2), (map_h_pixels as i32 / 2) - y);
+            // Convert back to grid coords relative to top-left of image
+            let x_grid = tx / PH_UNIT_GRID_SIZE as i32;
+            let y_grid = ty / PH_UNIT_GRID_SIZE as i32;
+            
+            x = x_grid;
+            y = y_grid;
+        }
+        
+        // Explicit boundary check
+        if x < 0 || x >= w as i32 || y < 0 || y >= (map_h_pixels as usize / PH_UNIT_GRID_SIZE) as i32 {
+            continue;
         }
 
         let idx = y * w as i32 + x;
+        // Strength determines opacity mostly
         let strength = cmp::min((*v as u32).saturating_mul(5), u8::MAX.into()) as u8;
 
         let idx = (idx as usize).saturating_mul(4);
         if idx.saturating_add(3) >= img_bytes.len() || strength < PH_GRID_VIZ_MIN_STRENGTH {
             continue;
         }
+        
+        // Interpolate color based on value / max_val
+        let t = (*v / max_val).clamp(0.0, 1.0);
+        let r = (base_color.0 as f32 * (1.0 - t) + high_color.0 as f32 * t) as u8;
+        let g = (base_color.1 as f32 * (1.0 - t) + high_color.1 as f32 * t) as u8;
+        let b = (base_color.2 as f32 * (1.0 - t) + high_color.2 as f32 * t) as u8;
 
         img_bytes[idx + 3] = cmp::min(img_bytes[idx + 3].saturating_add(strength), PH_GRID_OPACITY);
-        img_bytes[idx] = color.0;
-        img_bytes[idx + 1] = color.1;
-        img_bytes[idx + 2] = color.2;
+        img_bytes[idx] = r;
+        img_bytes[idx + 1] = g;
+        img_bytes[idx + 2] = b;
     }
 }

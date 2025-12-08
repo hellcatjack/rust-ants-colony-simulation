@@ -48,13 +48,24 @@ You can tweak these values in real-time to see how they affect the colony's beha
 - **Sensor Dist**: How far ahead an ant looks for pheromones.
 - **Sensor Angle**: The width of the ant's sensing field.
 - **Randomness**: The amount of random jitter in ant movement.
-- **Update Interval**: How often ants make steering decisions (Lower = Smoother/Smarter but more CPU intensive).
+- **Update Interval**: How often ants make steering decisions.
+- **Max Pheromone**: Cap for pheromone accumulation. Determines when trails turn "Deep Red/Blue".
+
+### Map Editor (Toolbar at Bottom)
+The simulation includes a built-in map editor to interact with the environment:
+- **Draw Wall**: Paint obstacles that ants must navigate around.
+- **Eraser**: Remove walls.
+- **Place Food**: Click to spawn a food source. Each food source contains 1000 units of food.
+- **Remove Food**: Click near a food source to remove it.
+
+**Note:** The simulation starts with **No Food**. You must place food using the editor to start the foraging process.
 
 ### Reset
-- **Reset Simulation**: Clears the map and respawns ants at the nest. Useful after drastically changing parameters.
+- **Reset Simulation**: Clears the map, respawns ants, and resets pheromones. Note that placed food and walls persist (or cleared? Check reset logic).
 
 ## Configuration
 The initial static configuration constants are located in `src/configs.rs`. However, many of these can now be overridden at runtime via the UI.
+Settings can be saved to `user_config.json` via the "Save Config" button and are automatically loaded on startup.
 
 ## Assets
 Original assets located in `assets/`.

@@ -47,6 +47,11 @@ pub struct AntAnimations {
 #[derive(Component)]
 pub struct DecisionTimer(pub f32);
 
+#[derive(Component)]
+pub struct Food {
+    pub storage: i32,
+}
+
 impl Plugin for AntPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
@@ -58,7 +63,11 @@ impl Plugin for AntPlugin {
             )
             .add_systems(
                 Update,
-                check_wall_collision.run_if(on_timer(Duration::from_secs_f32(0.1))),
+                check_wall_collision,
+            )
+            .add_systems(
+                Update,
+                avoid_obstacles.before(check_wall_collision),
             )
             .add_systems(
                 Update,
@@ -83,6 +92,7 @@ impl Plugin for AntPlugin {
             .add_systems(Update, update_position.after(check_wall_collision))
             .add_systems(Update, animate_ant)
             .add_systems(Update, debug_sensors)
+            .add_systems(Update, update_ant_count)
             .add_systems(Update, reset_ants);
     }
 }
@@ -148,6 +158,7 @@ fn reset_ants(
     mut events: EventReader<ResetSimEvent>,
     ant_query: Query<Entity, With<Ant>>,
     ant_animations: Res<AntAnimations>,
+    config: Res<SimConfig>,
 ) {
     for _ in events.iter() {
         // Despawn all ants
@@ -156,8 +167,35 @@ fn reset_ants(
         }
 
         // Spawn new ants
-        for _ in 0..NUM_ANTS {
+        for _ in 0..config.ants_count {
              spawn_ant(&mut commands, &ant_animations.walk);
+        }
+    }
+}
+
+fn update_ant_count(
+    mut commands: Commands,
+    ant_query: Query<Entity, With<Ant>>,
+    config: Res<SimConfig>,
+    ant_animations: Res<AntAnimations>,
+) {
+    if !config.is_changed() {
+        return;
+    }
+
+    let current_count = ant_query.iter().len();
+    let target_count = config.ants_count;
+
+    if current_count < target_count {
+        let diff = target_count - current_count;
+        for _ in 0..diff {
+            spawn_ant(&mut commands, &ant_animations.walk);
+        }
+    } else if current_count > target_count {
+        let diff = current_count - target_count;
+        let ants_to_despawn = ant_query.iter().take(diff);
+        for entity in ants_to_despawn {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -165,14 +203,15 @@ fn reset_ants(
 fn drop_pheromone(
     mut ant_query: Query<(&Transform, &CurrentTask, &PhStrength), With<Ant>>,
     mut pheromones: ResMut<Pheromones>,
+    config: Res<SimConfig>,
 ) {
     for (transform, ant_task, ph_strength) in ant_query.iter_mut() {
         let x = transform.translation.x as i32;
         let y = transform.translation.y as i32;
 
         match ant_task.0 {
-            AntTask::FindFood => pheromones.to_home.emit_signal(&(x, y), ph_strength.0),
-            AntTask::FindHome => pheromones.to_food.emit_signal(&(x, y), ph_strength.0),
+            AntTask::FindFood => pheromones.to_home.emit_signal(&(x, y), ph_strength.0, config.max_pheromone_strength),
+            AntTask::FindHome => pheromones.to_food.emit_signal(&(x, y), ph_strength.0, config.max_pheromone_strength),
         }
     }
 }
@@ -222,6 +261,7 @@ fn periodic_direction_update(
     scan_radius: Res<AntScanRadius>,
     config: Res<SimConfig>,
     time: Res<Time>,
+    food_query: Query<&Transform, With<Food>>,
 ) {
     (stats.food_cache_size, stats.home_cache_size) = pheromones.clear_cache();
 
@@ -239,13 +279,15 @@ fn periodic_direction_update(
         // If ant is close to food/home, pull it towards itself
         match current_task.0 {
             AntTask::FindFood => {
-                let dist_to_food = transform.translation.distance_squared(vec3(
-                    FOOD_LOCATION.0,
-                    FOOD_LOCATION.1,
-                    0.0,
-                ));
-                if dist_to_food <= ANT_TARGET_AUTO_PULL_RADIUS * ANT_TARGET_AUTO_PULL_RADIUS {
-                    target = Some(vec2(FOOD_LOCATION.0, FOOD_LOCATION.1));
+                let pull_radius_sq = config.ant_target_auto_pull_radius * config.ant_target_auto_pull_radius;
+                let mut best_dist = pull_radius_sq;
+                // Find closest food
+                for food_transform in food_query.iter() {
+                    let dist_sq = transform.translation.distance_squared(food_transform.translation);
+                    if dist_sq <= best_dist {
+                        best_dist = dist_sq;
+                        target = Some(food_transform.translation.truncate());
+                    }
                 }
             }
             AntTask::FindHome => {
@@ -254,7 +296,7 @@ fn periodic_direction_update(
                     HOME_LOCATION.1,
                     0.0,
                 ));
-                if dist_to_home <= ANT_TARGET_AUTO_PULL_RADIUS * ANT_TARGET_AUTO_PULL_RADIUS {
+                if dist_to_home <= config.ant_target_auto_pull_radius * config.ant_target_auto_pull_radius {
                     target = Some(vec2(HOME_LOCATION.0, HOME_LOCATION.1));
                 }
             }
@@ -279,9 +321,9 @@ fn periodic_direction_update(
                 AntTask::FindHome => &pheromones.to_home,
             };
             
-            let v_l = grid.sample_sensor_sum(pos_l, ANT_SENSOR_RADIUS);
-            let v_r = grid.sample_sensor_sum(pos_r, ANT_SENSOR_RADIUS);
-            let v_f = grid.sample_sensor_sum(pos_f, ANT_SENSOR_RADIUS);
+            let v_l = grid.sample_sensor_sum(pos_l, ANT_SENSOR_RADIUS).powf(2.0);
+            let v_r = grid.sample_sensor_sum(pos_r, ANT_SENSOR_RADIUS).powf(2.0);
+            let v_f = grid.sample_sensor_sum(pos_f, ANT_SENSOR_RADIUS).powf(2.0);
             
             // 3. Decide Target
             if v_l + v_r + v_f > 0.0 {
@@ -317,7 +359,7 @@ fn periodic_direction_update(
         );
 
         let mut rng = rand::thread_rng();
-        acceleration.0 += steering_force * rng.gen_range(0.5..=1.0) * ANT_STEERING_FORCE_FACTOR;
+        acceleration.0 += steering_force * rng.gen_range(0.5..=1.0) * config.ant_steering_force_factor;
         // Add wiggle while following trail
         // Scale wiggle down based on global randomness setting, but keep it proportional
         acceleration.0 += get_rand_unit_vec2() * (config.ant_turn_randomness * 0.33); 
@@ -393,6 +435,7 @@ fn debug_sensors(
 }
 
 fn check_home_food_collisions(
+    mut commands: Commands,
     mut ant_query: Query<
         (
             &Transform,
@@ -404,6 +447,7 @@ fn check_home_food_collisions(
         ),
         With<Ant>,
     >,
+    mut food_query: Query<(Entity, &Transform, &mut Food), Without<Ant>>,
     ant_animations: Res<AntAnimations>,
 ) {
     for (transform, mut sprite, mut velocity, mut ant_task, mut ph_strength, mut atlas_handle) in
@@ -429,25 +473,28 @@ fn check_home_food_collisions(
         }
 
         // Food Collision
-        let dist_to_food =
-            transform
-                .translation
-                .distance_squared(vec3(FOOD_LOCATION.0, FOOD_LOCATION.1, 0.0));
-        if dist_to_food < FOOD_PICKUP_RADIUS * FOOD_PICKUP_RADIUS {
-            match ant_task.0 {
-                AntTask::FindFood => {
-                    velocity.0 *= -1.0;
+        if let AntTask::FindFood = ant_task.0 {
+            for (food_entity, food_transform, mut food) in food_query.iter_mut() {
+                let dist_to_food = transform.translation.distance_squared(food_transform.translation);
+                
+                if dist_to_food < FOOD_PICKUP_RADIUS * FOOD_PICKUP_RADIUS {
+                     // Collided with food
+                     velocity.0 *= -1.0;
+                     ant_task.0 = AntTask::FindHome;
+                     ph_strength.0 = ANT_INITIAL_PH_STRENGTH;
+                     
+                     *atlas_handle = ant_animations.walk_food.clone();
+                     sprite.color = Color::rgb(1.0, 2.0, 1.0);
+                     
+                     food.storage -= 1;
+                     if food.storage <= 0 {
+                         commands.entity(food_entity).despawn();
+                     }
+                     
+                     // Stop checking other foods for this ant
+                     break; 
                 }
-                AntTask::FindHome => {}
             }
-            ant_task.0 = AntTask::FindHome;
-            ph_strength.0 = ANT_INITIAL_PH_STRENGTH;
-            
-            println!("Collision! Swapping texture to Food Handle: {:?}", ant_animations.walk_food);
-            *atlas_handle = ant_animations.walk_food.clone();
-            println!("Swap success.");
-            
-            sprite.color = Color::rgb(1.0, 2.0, 1.0);
         }
     }
 }
@@ -465,22 +512,71 @@ fn animate_ant(
 }
 
 fn check_wall_collision(
-    mut ant_query: Query<(&Transform, &Velocity, &mut Acceleration), With<Ant>>,
+    mut ant_query: Query<(&mut Transform, &mut Velocity, &mut Acceleration), With<Ant>>,
+    obstacle_map: Res<crate::map::ObstacleMap>,
+    map_size: Res<crate::map::MapSize>,
 ) {
-    for (transform, velocity, mut acceleration) in ant_query.iter_mut() {
+    let w = map_size.width;
+    let h = map_size.height;
+
+    for (mut transform, mut velocity, mut acceleration) in ant_query.iter_mut() {
         // wall rebound
         let border = 20.0;
-        let top_left = (-W / 2.0, H / 2.0);
-        let bottom_right = (W / 2.0, -H / 2.0);
-        let x_bound = transform.translation.x < top_left.0 + border
-            || transform.translation.x >= bottom_right.0 - border;
-        let y_bound = transform.translation.y >= top_left.1 - border
-            || transform.translation.y < bottom_right.1 + border;
-        if x_bound || y_bound {
+        let top_left = (-w / 2.0, h / 2.0);
+        let bottom_right = (w / 2.0, -h / 2.0);
+        
+        let pos = transform.translation;
+        
+        let mut hit_wall = false;
+        
+        // Wall Clamping
+        if pos.x < top_left.0 + border {
+            transform.translation.x = top_left.0 + border;
+            hit_wall = true;
+        } else if pos.x >= bottom_right.0 - border {
+            transform.translation.x = bottom_right.0 - border;
+            hit_wall = true;
+        }
+        
+        if pos.y > top_left.1 - border {
+            transform.translation.y = top_left.1 - border;
+            hit_wall = true;
+        } else if pos.y < bottom_right.1 + border {
+            transform.translation.y = bottom_right.1 + border;
+            hit_wall = true;
+        }
+
+        let mut hit_obstacle = false;
+        if !hit_wall {
+             // Check obstacle map with radius
+             // Radius reduced to 10.0 for tighter visual collision
+             if obstacle_map.is_obstacle_in_radius(pos.x, pos.y, 10.0, w, h) {
+                 hit_obstacle = true;
+                 
+                 // Push ant back slightly to unstuck (opposite to current velocity)
+                 let push_dir = -velocity.0.normalize_or_zero();
+                 transform.translation.x += push_dir.x * 2.0;
+                 transform.translation.y += push_dir.y * 2.0;
+             }
+        }
+
+        if hit_wall || hit_obstacle {
+            // "Stop and observe" behavior
+            // Heavily dampen velocity and reverse it slightly to detach from wall
+            velocity.0 = -velocity.0 * 0.2;
+            
+            // Clear acceleration
+            acceleration.0 = Vec2::ZERO;
+
+            // Add a small random rotation to velocity to simulate "looking for new direction"
             let mut rng = thread_rng();
-            let target = vec2(rng.gen_range(-200.0..200.0), rng.gen_range(-200.0..200.0));
-            acceleration.0 +=
-                get_steering_force(target, transform.translation.truncate(), velocity.0);
+            let jitter_angle: f32 = rng.gen_range(-1.0..1.0); 
+            let cos_a = jitter_angle.cos();
+            let sin_a = jitter_angle.sin();
+            velocity.0 = vec2(
+                velocity.0.x * cos_a - velocity.0.y * sin_a,
+                velocity.0.x * sin_a + velocity.0.y * cos_a
+            );
         }
     }
 }
@@ -503,5 +599,77 @@ fn update_position(
         acceleration.0 = Vec2::ZERO;
         transform.rotation =
             Quat::from_rotation_z(calc_rotation_angle(old_pos, transform.translation) + PI);
+    }
+}
+
+fn avoid_obstacles(
+    mut ant_query: Query<(&Transform, &Velocity, &mut Acceleration), With<Ant>>,
+    obstacle_map: Res<crate::map::ObstacleMap>,
+    map_size: Res<crate::map::MapSize>,
+) {
+    let w = map_size.width;
+    let h = map_size.height;
+    // Look ahead distance reduced to 20.0 for closer reaction
+    let look_ahead = 20.0;
+    // Sensor probe offset angle (radians)
+    let probe_angle: f32 = 0.5; // ~30 degrees
+
+    for (transform, velocity, mut acceleration) in ant_query.iter_mut() {
+        if velocity.0.length_squared() < 0.1 { continue; }
+        
+        let forward = velocity.0.normalize();
+        let pos = transform.translation.truncate();
+        
+        // Center probe
+        let center_probe = pos + forward * look_ahead;
+        
+        // Left probe
+        let cos_a = probe_angle.cos();
+        let sin_a = probe_angle.sin();
+        let left_dir = vec2(
+            forward.x * cos_a - forward.y * sin_a,
+            forward.x * sin_a + forward.y * cos_a
+        );
+        let left_probe = pos + left_dir * look_ahead;
+        
+        // Right probe
+        let right_dir = vec2(
+            forward.x * cos_a + forward.y * sin_a,
+            -forward.x * sin_a + forward.y * cos_a
+        );
+        let right_probe = pos + right_dir * look_ahead;
+        
+        let center_hit = obstacle_map.is_obstacle_in_radius(center_probe.x, center_probe.y, 5.0, w, h);
+        let left_hit = obstacle_map.is_obstacle_in_radius(left_probe.x, left_probe.y, 5.0, w, h);
+        let right_hit = obstacle_map.is_obstacle_in_radius(right_probe.x, right_probe.y, 5.0, w, h);
+        
+        if center_hit || left_hit || right_hit {
+            let mut turn_force = Vec2::ZERO;
+            
+            // Steering logic
+            
+            if left_hit && !right_hit {
+                // Obstacle on left, turn right
+                turn_force += vec2(forward.y, -forward.x) * 400.0;
+            } else if right_hit && !left_hit {
+                // Obstacle on right, turn left
+                turn_force += vec2(-forward.y, forward.x) * 400.0;
+            } else {
+                // Both blocked or center blocked, pick random valid side or turn around
+                let mut rng = thread_rng();
+                if rng.gen_bool(0.5) {
+                    turn_force += vec2(forward.y, -forward.x) * 600.0;
+                } else {
+                    turn_force += vec2(-forward.y, forward.x) * 600.0;
+                }
+            }
+            
+            if center_hit {
+                 // Brake hard
+                 acceleration.0 -= velocity.0 * 2.0;
+            }
+
+            acceleration.0 += turn_force;
+        }
     }
 }
