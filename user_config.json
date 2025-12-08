@@ -1,7 +1,7 @@
 {
   "sim_config": {
-    "ph_decay_rate": 0.4,
-    "ant_ph_strength_decay_rate": 1.0,
+    "ph_decay_rate": 0.8,
+    "ant_ph_strength_decay_rate": 0.5,
     "ant_sensor_dist": 100.0,
     "ant_sensor_angle": 45.0,
     "ant_turn_randomness": 0.3,
@@ -9,10 +9,10 @@
     "ants_count": 1000,
     "ant_target_auto_pull_radius": 300.0,
     "ant_steering_force_factor": 20.0,
-    "max_pheromone_strength": 4000.0
+    "max_pheromone_strength": 300.0
   },
   "map_size": {
     "width": 5000.0,
-    "height": 5000.0
+    "height": 2900.0
   }
 }

@@ -59,22 +59,18 @@ impl Plugin for AntPlugin {
             .insert_resource(AntFollowCameraPos(Vec2::ZERO))
             .add_systems(
                 Update,
-                drop_pheromone.run_if(on_timer(Duration::from_secs_f32(ANT_PH_DROP_INTERVAL))),
-            )
-            .add_systems(
-                Update,
-                check_wall_collision,
-            )
-            .add_systems(
-                Update,
-                avoid_obstacles.before(check_wall_collision),
-            )
-            .add_systems(
-                Update,
-                check_home_food_collisions.run_if(on_timer(Duration::from_secs_f32(0.1))),
+                (
+                    drop_pheromone.run_if(on_timer(Duration::from_secs_f32(ANT_PH_DROP_INTERVAL))),
+                    avoid_obstacles,
+                    check_wall_collision.after(avoid_obstacles),
+                    check_home_food_collisions.run_if(on_timer(Duration::from_secs_f32(0.1))),
+                    periodic_direction_update,
+                    decay_ph_strength.run_if(on_timer(Duration::from_secs_f32(ANT_PH_STRENGTH_DECAY_INTERVAL))),
+                    update_position.after(check_wall_collision),
+                    animate_ant,
+                ).run_if(run_if_not_paused)
             )
             .add_systems(Update, update_camera_follow_pos)
-            .add_systems(Update, periodic_direction_update)
             .add_systems(
                 Update,
                 update_stats.run_if(on_timer(Duration::from_secs_f32(3.0))),
@@ -83,18 +79,14 @@ impl Plugin for AntPlugin {
                 Update,
                 update_scan_radius.run_if(on_timer(Duration::from_secs_f32(1.0))),
             )
-            .add_systems(
-                Update,
-                decay_ph_strength.run_if(on_timer(Duration::from_secs_f32(
-                    ANT_PH_STRENGTH_DECAY_INTERVAL,
-                ))),
-            )
-            .add_systems(Update, update_position.after(check_wall_collision))
-            .add_systems(Update, animate_ant)
             .add_systems(Update, debug_sensors)
             .add_systems(Update, update_ant_count)
             .add_systems(Update, reset_ants);
     }
+}
+
+fn run_if_not_paused(settings: Res<crate::gui::SimSettings>) -> bool {
+    !settings.is_paused
 }
 
 fn setup(
@@ -258,10 +250,12 @@ fn periodic_direction_update(
     mut ant_query: Query<(&mut Acceleration, &Transform, &CurrentTask, &Velocity, &mut DecisionTimer), With<Ant>>,
     mut pheromones: ResMut<Pheromones>,
     mut stats: ResMut<SimStatistics>,
-    scan_radius: Res<AntScanRadius>,
+    _scan_radius: Res<AntScanRadius>,
     config: Res<SimConfig>,
     time: Res<Time>,
     food_query: Query<&Transform, With<Food>>,
+    obstacle_map: Res<crate::map::ObstacleMap>,
+    map_size: Res<crate::map::MapSize>,
 ) {
     (stats.food_cache_size, stats.home_cache_size) = pheromones.clear_cache();
 
@@ -283,21 +277,29 @@ fn periodic_direction_update(
                 let mut best_dist = pull_radius_sq;
                 // Find closest food
                 for food_transform in food_query.iter() {
+                    let food_pos = food_transform.translation.truncate();
                     let dist_sq = transform.translation.distance_squared(food_transform.translation);
                     if dist_sq <= best_dist {
-                        best_dist = dist_sq;
-                        target = Some(food_transform.translation.truncate());
+                         // Check Line of Sight
+                         if obstacle_map.has_line_of_sight(current_pos.truncate(), food_pos, map_size.width, map_size.height) {
+                             best_dist = dist_sq;
+                             target = Some(food_pos);
+                         }
                     }
                 }
             }
             AntTask::FindHome => {
+                let home_pos = vec2(HOME_LOCATION.0, HOME_LOCATION.1);
                 let dist_to_home = transform.translation.distance_squared(vec3(
                     HOME_LOCATION.0,
                     HOME_LOCATION.1,
                     0.0,
                 ));
                 if dist_to_home <= config.ant_target_auto_pull_radius * config.ant_target_auto_pull_radius {
-                    target = Some(vec2(HOME_LOCATION.0, HOME_LOCATION.1));
+                    // Check LOS
+                     if obstacle_map.has_line_of_sight(current_pos.truncate(), home_pos, map_size.width, map_size.height) {
+                         target = Some(home_pos);
+                     }
                 }
             }
         };
@@ -328,8 +330,8 @@ fn periodic_direction_update(
             // 3. Decide Target
             if v_l + v_r + v_f > 0.0 {
                  // Re-derive directions for weighting (normalized)
-                 let velocity_dir = velocity.0.normalize_or_zero();
-                 let forward = if velocity_dir == Vec2::ZERO { vec2(1.0, 0.0) } else { velocity_dir };
+
+
                  
                  // We need the directions again to sum them. 
                  // Since we refactored positions, let's just use (Pos - Current).normalize()

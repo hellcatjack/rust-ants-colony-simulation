@@ -31,6 +31,7 @@ cargo run --release
 ### Keyboard Shortcuts
 | Key | Action |
 | --- | --- |
+| **Space** | Pause/Resume Simulation |
 | **TAB** | Toggle Settings Menu (Open/Close UI) |
 | **H** | Toggle Home Pheromone Visibility |
 | **F** | Toggle Food Pheromone Visibility |
@@ -39,6 +40,10 @@ cargo run --release
 | **-** | Reduce Speed (Limit FPS: 60 -> 30) |
 | **=** | Increase Speed (Unlimited FPS) |
 | **ESC**| Exit Simulation |
+
+### Mouse Controls
+- **Left Click**: Use selected Editor Tool (Draw Wall, Place Food, etc.)
+- **Right / Middle Click + Drag**: Pan Camera
 
 ### UI Parameters (Press TAB)
 You can tweak these values in real-time to see how they affect the colony's behavior:
@@ -53,8 +58,8 @@ You can tweak these values in real-time to see how they affect the colony's beha
 
 ### Map Editor (Toolbar at Bottom)
 The simulation includes a built-in map editor to interact with the environment:
-- **Draw Wall**: Paint obstacles that ants must navigate around.
-- **Eraser**: Remove walls.
+- **Draw Wall**: Paint obstacles that ants must navigate around. Supports continuous drawing.
+- **Eraser**: Remove walls. Supports continuous erasing.
 - **Place Food**: Click to spawn a food source. Each food source contains 1000 units of food.
 - **Remove Food**: Click near a food source to remove it.
 

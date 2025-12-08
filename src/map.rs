@@ -108,6 +108,41 @@ impl ObstacleMap {
         }
     }
     
+    pub fn has_line_of_sight(&self, start: Vec2, end: Vec2, map_w: f32, map_h: f32) -> bool {
+         let grid_x0 = ((start.x + map_w / 2.0) / PH_UNIT_GRID_SIZE as f32) as isize;
+         let grid_y0 = ((start.y + map_h / 2.0) / PH_UNIT_GRID_SIZE as f32) as isize;
+         
+         let grid_x1 = ((end.x + map_w / 2.0) / PH_UNIT_GRID_SIZE as f32) as isize;
+         let grid_y1 = ((end.y + map_h / 2.0) / PH_UNIT_GRID_SIZE as f32) as isize;
+         
+         let dx = (grid_x1 - grid_x0).abs();
+         let dy = -(grid_y1 - grid_y0).abs();
+         let sx = if grid_x0 < grid_x1 { 1 } else { -1 };
+         let sy = if grid_y0 < grid_y1 { 1 } else { -1 };
+         let mut err = dx + dy;
+         
+         let mut x = grid_x0;
+         let mut y = grid_y0;
+         
+         loop {
+             if self.is_obstacle_at_index(x, y) {
+                 return false;
+             }
+             if x == grid_x1 && y == grid_y1 { break; }
+             
+             let e2 = 2 * err;
+             if e2 >= dy {
+                 err += dy;
+                 x += sx;
+             }
+             if e2 <= dx {
+                 err += dx;
+                 y += sy;
+             }
+         }
+         true
+    }
+
     pub fn clear(&mut self) {
         self.grid.fill(false);
     }

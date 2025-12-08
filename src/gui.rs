@@ -40,10 +40,72 @@ pub struct SimSettings {
     pub is_show_menu: bool,
     pub is_show_ants_path: bool,
     pub is_show_sensor_radius: bool,
+    pub is_paused: bool,
+}
+
+impl Default for SimSettings {
+    fn default() -> Self {
+        Self {
+            is_show_home_ph: true,
+            is_show_food_ph: true,
+            is_show_ants: true,
+            is_camera_follow: false,
+            is_show_menu: true,
+            is_show_ants_path: false,
+            is_show_sensor_radius: false,
+            is_paused: false,
+        }
+    }
+}
+impl Plugin for GuiPlugin {
+    fn build(&self, app: &mut bevy::prelude::App) {
+        app.insert_resource(SimSettings::default())
+            .insert_resource(SimStatistics::default())
+            .insert_resource(SimConfig::default())
+            .insert_resource(EditorState::default())
+            .add_event::<ResetSimEvent>()
+            .add_systems(Update, settings_dialog)
+            .add_systems(Update, settings_toggle)
+            .add_systems(Update, handle_camera_control)
+            .add_systems(Update, editor_ui)
+            .add_systems(Update, handle_editor_input)
+            .add_plugins(EguiPlugin)
+            .add_systems(Startup, (setup, configure_ui, load_config));
+    }
+}
+// ...
+
+fn settings_toggle(
+    mut settings: ResMut<SimSettings>,
+    mut ant_query: Query<&mut Visibility, With<Ant>>,
+    keys: Res<Input<KeyCode>>,
+) {
+    if keys.just_pressed(KeyCode::Tab) {
+        settings.is_show_menu = !settings.is_show_menu;
+    }
+    if keys.just_pressed(KeyCode::Space) {
+        settings.is_paused = !settings.is_paused;
+        println!("Paused: {}", settings.is_paused);
+    }
+    if keys.just_pressed(KeyCode::H) {
+        settings.is_show_home_ph = !settings.is_show_home_ph;
+    }
+    if keys.just_pressed(KeyCode::F) {
+        settings.is_show_food_ph = !settings.is_show_food_ph;
+    }
+    if keys.just_pressed(KeyCode::P) {
+        settings.is_show_ants_path = !settings.is_show_ants_path;
+        settings.is_show_sensor_radius = !settings.is_show_sensor_radius;
+    }
+    if keys.just_pressed(KeyCode::A) {
+        settings.is_show_ants = !settings.is_show_ants;
+        toggle_ant_visibility(ant_query, settings.is_show_ants);
+    }
 }
 
 #[derive(Event)]
 pub struct ResetSimEvent;
+
 #[derive(Resource, Serialize, Deserialize, Clone)]
 pub struct SimConfig {
     pub ph_decay_rate: f32,
@@ -65,8 +127,8 @@ impl Default for SimConfig {
             ant_ph_strength_decay_rate: ANT_PH_STRENGTH_DECAY_RATE,
             ant_sensor_dist: ANT_SENSOR_DIST,
             ant_sensor_angle: ANT_SENSOR_ANGLE,
-            ant_turn_randomness: 0.3, // Approximation of hardcoded value
-            ant_update_interval: 0.1, // Default to slightly lower frequency than original 0.05
+            ant_turn_randomness: 0.3,
+            ant_update_interval: 0.1,
             ants_count: NUM_ANTS as usize,
             ant_target_auto_pull_radius: ANT_TARGET_AUTO_PULL_RADIUS,
             ant_steering_force_factor: ANT_STEERING_FORCE_FACTOR,
@@ -74,8 +136,6 @@ impl Default for SimConfig {
         }
     }
 }
-
-
 
 #[derive(Default, Resource)]
 pub struct SimStatistics {
@@ -85,77 +145,6 @@ pub struct SimStatistics {
     pub num_ants: usize,
     pub food_cache_size: u32,
     pub home_cache_size: u32,
-}
-
-impl Plugin for GuiPlugin {
-    fn build(&self, app: &mut bevy::prelude::App) {
-        app.insert_resource(SimSettings::default())
-            .insert_resource(SimStatistics::default())
-            .insert_resource(SimConfig::default())
-            .insert_resource(EditorState::default())
-            .add_event::<ResetSimEvent>()
-            .add_systems(Update, settings_dialog)
-            .add_systems(Update, settings_toggle)
-            .add_systems(Update, handle_camera_control)
-            .add_systems(Update, editor_ui)
-            .add_systems(Update, handle_editor_input)
-            .add_plugins(EguiPlugin)
-            .add_systems(Startup, (setup, configure_ui, load_config));
-    }
-}
-
-
-fn configure_ui(mut contexts: EguiContexts) {
-    let ctx = contexts.ctx_mut();
-    use bevy_egui::egui::{FontFamily, FontId, TextStyle};
-
-    let mut style = (*ctx.style()).clone();
-    style.text_styles = [
-        (TextStyle::Heading, FontId::new(24.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(18.0, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(18.0, FontFamily::Monospace)),
-        (TextStyle::Button, FontId::new(18.0, FontFamily::Proportional)),
-        (TextStyle::Small, FontId::new(14.0, FontFamily::Proportional)),
-    ].into();
-    ctx.set_style(style);
-}
-
-fn setup() {}
-
-fn handle_camera_control(
-    mut contexts: EguiContexts,
-    mut cam_query: Query<&mut PanCam>,
-) {
-    let ctx = contexts.ctx_mut();
-    let is_interacting = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
-
-    for mut pancam in cam_query.iter_mut() {
-        pancam.enabled = !is_interacting;
-    }
-}
-
-
-fn settings_toggle(
-    mut settings: ResMut<SimSettings>,
-    ant_query: Query<&mut Visibility, With<Ant>>,
-    keys: Res<Input<KeyCode>>,
-) {
-    if keys.just_pressed(KeyCode::Tab) {
-        settings.is_show_menu = !settings.is_show_menu;
-    }
-    if keys.just_pressed(KeyCode::H) {
-        settings.is_show_home_ph = !settings.is_show_home_ph;
-    }
-    if keys.just_pressed(KeyCode::F) {
-        settings.is_show_food_ph = !settings.is_show_food_ph;
-    }
-    if keys.just_pressed(KeyCode::P) {
-        settings.is_show_ants_path = !settings.is_show_ants_path;
-    }
-    if keys.just_pressed(KeyCode::A) {
-        settings.is_show_ants = !settings.is_show_ants;
-        toggle_ant_visibility(ant_query, settings.is_show_ants);
-    }
 }
 
 fn settings_dialog(
@@ -231,17 +220,34 @@ fn toggle_ant_visibility(mut ant_query: Query<&mut Visibility, With<Ant>>, is_vi
     }
 }
 
-impl Default for SimSettings {
-    fn default() -> Self {
-        Self {
-            is_show_home_ph: true,
-            is_show_food_ph: true,
-            is_show_ants: true,
-            is_camera_follow: false,
-            is_show_menu: false,
-            is_show_ants_path: false,
-            is_show_sensor_radius: false,
-        }
+
+
+fn configure_ui(mut contexts: EguiContexts) {
+    let ctx = contexts.ctx_mut();
+    use bevy_egui::egui::{FontFamily, FontId, TextStyle};
+
+    let mut style = (*ctx.style()).clone();
+    style.text_styles = [
+        (TextStyle::Heading, FontId::new(24.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(18.0, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(18.0, FontFamily::Monospace)),
+        (TextStyle::Button, FontId::new(18.0, FontFamily::Proportional)),
+        (TextStyle::Small, FontId::new(14.0, FontFamily::Proportional)),
+    ].into();
+    ctx.set_style(style);
+}
+
+fn setup() {}
+
+fn handle_camera_control(
+    mut contexts: EguiContexts,
+    mut cam_query: Query<&mut PanCam>,
+) {
+    let ctx = contexts.ctx_mut();
+    let is_interacting = ctx.wants_pointer_input() || ctx.is_pointer_over_area();
+
+    for mut pancam in cam_query.iter_mut() {
+        pancam.enabled = !is_interacting;
     }
 }
 
@@ -306,11 +312,28 @@ fn handle_editor_input(
     camera_q: Query<(&Camera, &GlobalTransform), With<PanCam>>,
     mouse_btn: Res<Input<MouseButton>>,
     food_query: Query<(Entity, &Transform), With<Food>>,
+    mut contexts: EguiContexts,
+    mut last_drag_pos: Local<Option<Vec2>>,
 ) {
-    if editor_state.selected_tool == EditorTool::None { return; }
+    if editor_state.selected_tool == EditorTool::None { 
+        *last_drag_pos = None;
+        return; 
+    }
     
+    // Check if mouse is interacting with UI
+    let ctx = contexts.ctx_mut();
+    if ctx.is_pointer_over_area() || ctx.wants_pointer_input() {
+        *last_drag_pos = None;
+        return;
+    }
+
     if camera_q.is_empty() { return; }
     
+    // Reset drag if mouse not pressed
+    if !mouse_btn.pressed(MouseButton::Left) {
+        *last_drag_pos = None;
+    }
+
     let (camera, camera_transform) = camera_q.single();
     if let Some(window) = windows.iter().next() {
         if let Some(cursor_pos) = window.cursor_position() {
@@ -318,14 +341,27 @@ fn handle_editor_input(
                  let world_pos = ray.origin.truncate();
                  
                   match editor_state.selected_tool {
-                      EditorTool::BrushObstacle => {
+                      EditorTool::BrushObstacle | EditorTool::EraserObstacle => {
                           if mouse_btn.pressed(MouseButton::Left) {
-                              obstacle_map.set_obstacle(world_pos.x, world_pos.y, map_size.width, map_size.height, true, editor_state.brush_size);
-                          }
-                      },
-                      EditorTool::EraserObstacle => {
-                          if mouse_btn.pressed(MouseButton::Left) {
-                              obstacle_map.set_obstacle(world_pos.x, world_pos.y, map_size.width, map_size.height, false, editor_state.brush_size);
+                              let is_brush = editor_state.selected_tool == EditorTool::BrushObstacle;
+                              
+                              // Interpolation Logic
+                              let start = last_drag_pos.unwrap_or(world_pos);
+                              let dist = start.distance(world_pos);
+                              let step = (editor_state.brush_size * 0.25).max(1.0);
+                              
+                              if dist > step {
+                                  let steps = (dist / step).ceil() as i32;
+                                  for i in 0..=steps {
+                                       let t = i as f32 / steps as f32;
+                                       let p = start.lerp(world_pos, t);
+                                       obstacle_map.set_obstacle(p.x, p.y, map_size.width, map_size.height, is_brush, editor_state.brush_size);
+                                  }
+                              } else {
+                                  obstacle_map.set_obstacle(world_pos.x, world_pos.y, map_size.width, map_size.height, is_brush, editor_state.brush_size);
+                              }
+                              
+                              *last_drag_pos = Some(world_pos);
                           }
                       },
                       EditorTool::PlaceFood => {

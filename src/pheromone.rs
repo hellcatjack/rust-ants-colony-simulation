@@ -27,13 +27,17 @@ impl Plugin for PheromonePlugin {
             .insert_resource(Pheromones::new())
             .add_systems(
                 Update,
-                pheromone_decay.run_if(on_timer(Duration::from_secs_f32(PH_DECAY_INTERVAL))),
+                (
+                    pheromone_decay.run_if(on_timer(Duration::from_secs_f32(PH_DECAY_INTERVAL))),
+                    update_kd_tree.run_if(on_timer(Duration::from_secs_f32(
+                        PH_KD_TREE_UPDATE_INTERVAL,
+                    ))),
+                    clean_zero_signals.run_if(on_timer(Duration::from_secs_f32(2.0))),
+                ).run_if(run_if_not_paused)
             )
             .add_systems(
                 Update,
-                update_kd_tree.run_if(on_timer(Duration::from_secs_f32(
-                    PH_KD_TREE_UPDATE_INTERVAL,
-                ))),
+                pheromone_image_update.run_if(on_timer(Duration::from_secs_f32(PH_IMG_UPDATE_SEC))),
             )
             .add_systems(
                 Update,
@@ -41,16 +45,12 @@ impl Plugin for PheromonePlugin {
                     PH_KD_TREE_UPDATE_INTERVAL,
                 ))),
             )
-            .add_systems(
-                Update,
-                clean_zero_signals.run_if(on_timer(Duration::from_secs_f32(2.0))),
-            )
-            .add_systems(
-                Update,
-                pheromone_image_update.run_if(on_timer(Duration::from_secs_f32(PH_IMG_UPDATE_SEC))),
-            )
             .add_systems(Update, reset_pheromones);
     }
+}
+
+fn run_if_not_paused(settings: Res<SimSettings>) -> bool {
+    !settings.is_paused
 }
 
 fn reset_pheromones(

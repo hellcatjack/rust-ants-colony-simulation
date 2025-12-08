@@ -63,6 +63,7 @@ fn main() {
         // Systems
         .add_systems(Startup, setup)
         .add_systems(Update, ant_follow_camera)
+        .add_systems(Update, update_border_size)
         .add_systems(Last, limit_fps)
         // Internal Plugins
         .add_plugins(AntPlugin)
@@ -83,10 +84,14 @@ fn ant_follow_camera(
     }
 
     let mut transform = camera_query.single_mut();
-    transform.translation = vec3(ant_pos.0.x, ant_pos.0.y, ANT_Z_INDEX);
+    transform.translation = vec3(ant_pos.0.x, ant_pos.0.y, ANT_Z_INDEX + 500.0);
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut images: ResMut<Assets<Image>>,
+) {
     commands
         .spawn((
             Camera2dBundle {
@@ -95,12 +100,16 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     ..default()
                 },
                 tonemapping: Tonemapping::TonyMcMapface,
+                transform: Transform::from_xyz(0.0, 0.0, 500.0),
                 ..default()
             },
             BloomSettings::default(),
             FollowCamera,
         ))
-        .insert(PanCam::default());
+        .insert(PanCam {
+            grab_buttons: vec![MouseButton::Right, MouseButton::Middle],
+            ..default()
+        });
 
     // Ant colony sprite
     commands.spawn(SpriteBundle {
@@ -114,19 +123,79 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ..Default::default()
     });
 
-    // Food sprite - Removed default spawning
-    /*
-    commands.spawn(SpriteBundle {
-        texture: asset_server.load(SPRITE_FOOD),
-        sprite: Sprite {
-            color: Color::rgb(1.5, 1.5, 1.5),
-            ..default()
-        },
-        transform: Transform::from_xyz(FOOD_LOCATION.0, FOOD_LOCATION.1, 2.0)
-            .with_scale(Vec3::splat(FOOD_SPRITE_SCALE)),
-        ..Default::default()
-    });
-    */
+    // Programmatic Border (Glass Tank Effect)
+    // Create a 1x1 White Pixel Texture
+    let image = Image::new_fill(
+        bevy::render::render_resource::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        bevy::render::render_resource::TextureDimension::D2,
+        &[255, 255, 255, 255],
+        bevy::render::render_resource::TextureFormat::Rgba8Unorm,
+    );
+    let handle = images.add(image);
+    let color = Color::rgba(0.5, 0.8, 1.0, 0.5); // Cyan Glass
+    
+    // Spawn 4 segments with placeholder transforms (updated by system immediately)
+    let segments = vec![BorderSegment::Top, BorderSegment::Bottom, BorderSegment::Left, BorderSegment::Right];
+    for segment in segments {
+        commands.spawn((
+            SpriteBundle {
+                texture: handle.clone(),
+                sprite: Sprite {
+                    color,
+                    custom_size: Some(Vec2::new(100.0, 100.0)), // Initial
+                    ..default()
+                },
+                transform: Transform::from_xyz(0.0, 0.0, 20.0), 
+                ..default()
+            },
+            MapBorder,
+            segment,
+        ));
+    }
+}
+
+#[derive(Component)]
+struct MapBorder;
+
+#[derive(Component)]
+enum BorderSegment {
+    Top, Bottom, Left, Right
+}
+
+fn update_border_size(
+    map_size: Res<ants::map::MapSize>,
+    mut query: Query<(&mut Sprite, &mut Transform, &BorderSegment), With<MapBorder>>,
+) {
+    if map_size.is_changed() {
+        let w = map_size.width;
+        let h = map_size.height;
+        let t = 20.0; // Thickness
+        
+        for (mut sprite, mut transform, segment) in query.iter_mut() {
+             match segment {
+                 BorderSegment::Top => {
+                     sprite.custom_size = Some(Vec2::new(w + 2.0 * t, t));
+                     transform.translation.y = h / 2.0 + t / 2.0;
+                     transform.translation.x = 0.0;
+                 },
+                 BorderSegment::Bottom => {
+                     sprite.custom_size = Some(Vec2::new(w + 2.0 * t, t));
+                     transform.translation.y = -(h / 2.0 + t / 2.0);
+                     transform.translation.x = 0.0;
+                 },
+                 BorderSegment::Left => {
+                     sprite.custom_size = Some(Vec2::new(t, h));
+                     transform.translation.x = -(w / 2.0 + t / 2.0);
+                     transform.translation.y = 0.0;
+                 },
+                 BorderSegment::Right => {
+                     sprite.custom_size = Some(Vec2::new(t, h));
+                     transform.translation.x = w / 2.0 + t / 2.0;
+                     transform.translation.y = 0.0;
+                 },
+             }
+        }
+    }
 }
 
 fn limit_fps(mut limiter: ResMut<FrameLimiter>, keys: Res<Input<KeyCode>>) {
