@@ -1,6 +1,6 @@
 use crate::{
     grid::{add_map_to_grid_img, WorldGrid},
-    gui::{SimSettings, SimStatistics},
+    gui::{ResetSimEvent, SimConfig, SimSettings, SimStatistics},
     *,
 };
 use bevy::{
@@ -48,13 +48,23 @@ impl Plugin for PheromonePlugin {
             .add_systems(
                 Update,
                 pheromone_image_update.run_if(on_timer(Duration::from_secs_f32(PH_IMG_UPDATE_SEC))),
-            );
+            )
+            .add_systems(Update, reset_pheromones);
     }
 }
 
-fn pheromone_decay(mut pheromones: ResMut<Pheromones>) {
-    pheromones.to_food.decay_signals();
-    pheromones.to_home.decay_signals();
+fn reset_pheromones(
+    mut events: EventReader<ResetSimEvent>,
+    mut pheromones: ResMut<Pheromones>,
+) {
+    for _ in events.iter() {
+        *pheromones = Pheromones::new();
+    }
+}
+
+fn pheromone_decay(mut pheromones: ResMut<Pheromones>, config: Res<SimConfig>) {
+    pheromones.to_food.decay_signals(config.ph_decay_rate);
+    pheromones.to_home.decay_signals(config.ph_decay_rate);
 }
 
 fn update_sim_stats(pheromones: Res<Pheromones>, mut stats: ResMut<SimStatistics>) {

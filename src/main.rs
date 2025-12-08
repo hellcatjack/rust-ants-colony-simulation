@@ -12,12 +12,28 @@ use bevy::{
     prelude::*,
 };
 use bevy_pancam::{PanCam, PanCamPlugin};
-
+use std::{thread, time::{Duration, Instant}};
 #[derive(Component)]
 struct FollowCamera;
 
+#[derive(Resource)]
+struct FrameLimiter {
+    last_frame: Instant,
+    target_fps: Option<u32>,
+}
+
+impl Default for FrameLimiter {
+    fn default() -> Self {
+        Self {
+            last_frame: Instant::now(),
+            target_fps: Some(60),
+        }
+    }
+}
+
 fn main() {
     App::new()
+        .init_resource::<FrameLimiter>()
         .add_plugins(
             DefaultPlugins
                 .set(ImagePlugin::default_nearest())
@@ -46,6 +62,7 @@ fn main() {
         // Systems
         .add_systems(Startup, setup)
         .add_systems(Update, ant_follow_camera)
+        .add_systems(Last, limit_fps)
         // Internal Plugins
         .add_plugins(AntPlugin)
         .add_plugins(PheromonePlugin)
@@ -106,4 +123,36 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             .with_scale(Vec3::splat(FOOD_SPRITE_SCALE)),
         ..Default::default()
     });
+}
+
+fn limit_fps(mut limiter: ResMut<FrameLimiter>, keys: Res<Input<KeyCode>>) {
+    if keys.just_pressed(KeyCode::Minus) {
+        if limiter.target_fps.is_none() {
+            limiter.target_fps = Some(60);
+            println!("Speed: Normal (60 FPS)");
+        } else if limiter.target_fps == Some(60) {
+            limiter.target_fps = Some(30);
+            println!("Speed: Slow (30 FPS)");
+        }
+    }
+    if keys.just_pressed(KeyCode::Equals) {
+        if limiter.target_fps == Some(30) {
+            limiter.target_fps = Some(60);
+            println!("Speed: Normal (60 FPS)");
+        } else if limiter.target_fps == Some(60) {
+            limiter.target_fps = None;
+            println!("Speed: Fast (Unlimited)");
+        }
+    }
+
+    if let Some(target_fps) = limiter.target_fps {
+        if target_fps > 0 {
+            let target_duration = Duration::from_secs_f32(1.0 / target_fps as f32);
+            let elapsed = limiter.last_frame.elapsed();
+            if elapsed < target_duration {
+                thread::sleep(target_duration - elapsed);
+            }
+        }
+    }
+    limiter.last_frame = Instant::now();
 }

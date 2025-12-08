@@ -116,8 +116,8 @@ impl WorldGrid {
         None
     }
 
-    pub fn decay_signals(&mut self) {
-        self.signals.decay_values(PH_DECAY_RATE);
+    pub fn decay_signals(&mut self, rate: f32) {
+        self.signals.decay_values(rate);
     }
 
     pub fn drop_zero_signals(&mut self) {
@@ -130,6 +130,21 @@ impl WorldGrid {
 
     pub fn get_signals_size(&self) -> usize {
         self.signals.values.len()
+    }
+
+    pub fn sample_sensor_sum(&self, pos: Vec2, radius: usize) -> f32 {
+        let (grid_x, grid_y) = self.get_ph_key(pos.x as i32, pos.y as i32);
+        let mut sum = 0.0;
+        
+        let radius = radius as i32;
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                if let Some(val) = self.signals.values.get(&(grid_x + dx, grid_y + dy)) {
+                     sum += val;
+                }
+            }
+        }
+        sum
     }
 }
 
