@@ -1,18 +1,18 @@
 {
   "sim_config": {
-    "ph_decay_rate": 0.8,
+    "ph_decay_rate": 0.7,
     "ant_ph_strength_decay_rate": 0.5,
     "ant_sensor_dist": 100.0,
-    "ant_sensor_angle": 45.0,
+    "ant_sensor_angle": 60.0,
     "ant_turn_randomness": 0.3,
-    "ant_update_interval": 0.5,
+    "ant_update_interval": 0.1,
     "ants_count": 1000,
-    "ant_target_auto_pull_radius": 300.0,
+    "ant_target_auto_pull_radius": 200.0,
     "ant_steering_force_factor": 20.0,
-    "max_pheromone_strength": 300.0
+    "max_pheromone_strength": 1000.0
   },
   "map_size": {
-    "width": 5000.0,
-    "height": 2900.0
+    "width": 3000.0,
+    "height": 1900.0
   }
 }

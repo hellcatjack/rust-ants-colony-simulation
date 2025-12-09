@@ -2,12 +2,13 @@
 
 A high-performance ant colony simulation written in Rust using the [Bevy](https://bevyengine.org/) engine. This simulation demonstrates emergent behavior where ants find optimal paths between their nest and food sources using pheromone trails.
 
-![screenshot](assets/processed/nest.png)
+![screenshot](assets/demo.png)
 
 ## Features
 
 - **High Performance**: Capable of simulating thousands of ants efficiently using spatial hashing and KD-Trees.
 - **Emergent Behavior**: Ants follow simple local rules to form complex global pathfinding networks.
+- **Smart Navigation**: Ants utilize a multi-sensor array including a rear sensor to climb pheromone gradients accurately to find the source.
 - **Real-time Tuning**: Adjust simulation parameters on the fly without restarting.
 - **Interactive UI**: Control visuals and simulation settings via a GUI.
 

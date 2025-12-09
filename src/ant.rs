@@ -323,33 +323,32 @@ fn periodic_direction_update(
                 AntTask::FindHome => &pheromones.to_home,
             };
             
-            let v_l = grid.sample_sensor_sum(pos_l, ANT_SENSOR_RADIUS).powf(2.0);
-            let v_r = grid.sample_sensor_sum(pos_r, ANT_SENSOR_RADIUS).powf(2.0);
-            let v_f = grid.sample_sensor_sum(pos_f, ANT_SENSOR_RADIUS).powf(2.0);
-            
-            // 3. Decide Target
+            // Sample sensors
+            let v_l = grid.sample_sensor_sum(pos_l, ANT_SENSOR_RADIUS);
+            let v_r = grid.sample_sensor_sum(pos_r, ANT_SENSOR_RADIUS);
+            let v_f = grid.sample_sensor_sum(pos_f, ANT_SENSOR_RADIUS);
+            // 3. Normal Steering
+            // Use squared values for sharper gradients
+            let v_l = v_l.powf(2.0);
+            let v_r = v_r.powf(2.0);
+            let v_f = v_f.powf(2.0);
+
             if v_l + v_r + v_f > 0.0 {
-                 // Re-derive directions for weighting (normalized)
-
-
-                 
-                 // We need the directions again to sum them. 
-                 // Since we refactored positions, let's just use (Pos - Current).normalize()
                  let dir_l = (pos_l - current_pos.truncate()).normalize();
                  let dir_r = (pos_r - current_pos.truncate()).normalize();
                  let dir_f = (pos_f - current_pos.truncate()).normalize();
 
+                 // Simple Weighted Sum = Forward Bias (due to geometry)
                  let steer_dir = (dir_l * v_l + dir_r * v_r + dir_f * v_f).normalize_or_zero();
                  
-                 // If resulting vec is valid, set target
                  if steer_dir != Vec2::ZERO {
                       target = Some(current_pos.truncate() + steer_dir * config.ant_sensor_dist);
                  }
             }
         }
-
+ 
         if target.is_none() {
-            // Default direction randomization
+            // No signal? Random Search.
             acceleration.0 += get_rand_unit_vec2() * config.ant_turn_randomness;
             continue;
         }
@@ -361,9 +360,9 @@ fn periodic_direction_update(
         );
 
         let mut rng = rand::thread_rng();
-        acceleration.0 += steering_force * rng.gen_range(0.5..=1.0) * config.ant_steering_force_factor;
-        // Add wiggle while following trail
-        // Scale wiggle down based on global randomness setting, but keep it proportional
+        acceleration.0 += steering_force * rng.gen_range(0.8..=1.2) * config.ant_steering_force_factor;
+        // Reduced lateral wiggle on established trails for stability
+        acceleration.0 += get_rand_unit_vec2() * (config.ant_turn_randomness * 0.1);
         acceleration.0 += get_rand_unit_vec2() * (config.ant_turn_randomness * 0.33); 
     }
 }
@@ -461,17 +460,31 @@ fn check_home_food_collisions(
                 .translation
                 .distance_squared(vec3(HOME_LOCATION.0, HOME_LOCATION.1, 0.0));
         if dist_to_home < HOME_RADIUS * HOME_RADIUS {
-            // rebound only the ants with food
+            // If we were bringing food home, drop it and turn around
             match ant_task.0 {
-                AntTask::FindFood => {}
+                AntTask::FindFood => {
+                    // Already looking for food (maybe gave up and came home, or just spawned)
+                    // RECHARGE PHEROMONE: Even if empty handed, visiting home refreshes scent supply.
+                    ph_strength.0 = ANT_INITIAL_PH_STRENGTH;
+                }
                 AntTask::FindHome => {
-                    velocity.0 *= -1.0;
+                    // Just arrived home with food.
+                    // 1. Drop Food (Switch Task)
+                    ant_task.0 = AntTask::FindFood;
+                    ph_strength.0 = ANT_INITIAL_PH_STRENGTH;
+                    *atlas_handle = ant_animations.walk.clone();
+                    sprite.color = Color::rgb(1.0, 1.0, 2.5);
+
+                    // 2. Turn Around to go back to where we came from
+                    // Reflect velocity perfectly to head back out the "entrance" we came in
+                    velocity.0 *= -1.0; 
+                    
+                    // Add a tiny bit of noise so they don't walk in a perfect laser line
+                     let mut rng = rand::thread_rng();
+                     let angle = rng.gen_range(-0.5..0.5); // Small jitter
+                     velocity.0 = Vec2::from_angle(angle).rotate(velocity.0);
                 }
             }
-            ant_task.0 = AntTask::FindFood;
-            ph_strength.0 = ANT_INITIAL_PH_STRENGTH;
-            *atlas_handle = ant_animations.walk.clone();
-            sprite.color = Color::rgb(1.0, 1.0, 2.5);
         }
 
         // Food Collision
